@@ -1,7 +1,7 @@
-name: GodBridge Trainer Fabric 26.3 build
+name: GodBridge Trainer 0.15 final Fabric build
 on:
   push:
-    branches: [godbridge-ci-20261014]
+    branches: [godbridge-v015-final-ci-20261014]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Extract isolated source
+      - name: Extract final release source
         run: |
           mkdir -p godbridge
           tar -xJf godbridge-source.tar.xz -C godbridge
@@ -22,27 +22,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.7.1'
-      - name: Build against actual 26.3 API
+      - name: Build actual Minecraft 26.3 mod and run 17 Java tests
         working-directory: godbridge
         shell: bash
         run: |
           set -o pipefail
-          # Plain Java main() tests are verified by verifyLogic, not Gradle Test.
-          echo 'tasks.named("test") { enabled = false }' >> build.gradle
           java -version 2>&1 | tee gradle-build.log
           gradle --version 2>&1 | tee -a gradle-build.log
           gradle --no-daemon --stacktrace clean build 2>&1 | tee -a gradle-build.log
-      - name: Upload complete build log
+      - name: Validate installable mod jar
+        working-directory: godbridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=build/libs/godbridge-trainer-26.3-0.15.0.jar
+          test -f "$jar"
+          jar tf "$jar" | grep -Fx 'fabric.mod.json'
+          jar tf "$jar" | grep -Fx 'dev/dalmacc/godbridge/GodBridgeTrainerClient.class'
+          unzip -p "$jar" fabric.mod.json | grep -q '"version": "0.15.0"'
+      - name: Upload Gradle build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: godbridge-build-log
+          name: godbridge-v015-build-log
           path: godbridge/gradle-build.log
           if-no-files-found: warn
-      - name: Upload jars on success
+      - name: Upload installable jar only
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: godbridge-installable-jars
-          path: godbridge/build/libs/*.jar
+          name: godbridge-v015-installable-jar
+          path: godbridge/build/libs/godbridge-trainer-26.3-0.15.0.jar
           if-no-files-found: error
