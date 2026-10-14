@@ -40,7 +40,7 @@ jobs:
           cat > world-smoke.sh <<'SCRIPT'
           #!/usr/bin/env bash
           set -uo pipefail
-          timeout --signal=TERM --kill-after=8s 370s gradle --no-daemon --console=plain runClient > world-smoke.log 2>&1 &
+          timeout --signal=TERM --kill-after=8s 280s gradle --no-daemon --console=plain runClient > world-smoke.log 2>&1 &
           build_pid=$!
           echo "RUNCLIENT_PID=$build_pid" | tee steps.log
           sleep 100
@@ -73,20 +73,40 @@ jobs:
           clickwin 427 235
           sleep 7
           capture create
-          # Allow commands, set Creative via game-mode cycle.
-          clickwin 427 283
-          sleep 1
+          # New World mode cycle: Survival -> Hardcore -> Creative.
+          clickwin 427 171
+          sleep 0.5
           clickwin 427 171
           sleep 2
           capture creation-options
           clickwin 266 446
           echo "World creation requested" | tee -a steps.log
-          sleep 125
+          sleep 27
           capture world
-          xdotool key F8
-          sleep 8
+          issue_command() {
+            local command="$1"
+            echo "CHAT $command" | tee -a steps.log
+            xdotool key --clearmodifiers t
+            sleep 0.4
+            xdotool type --clearmodifiers --delay 30 "$command"
+            xdotool key --clearmodifiers Return
+            sleep 2
+          }
+          # An isolated reproducible godbridge target. Player stands on -2,
+          # an anchor is at 0, and -1 is deliberately left empty.
+          issue_command "/setblock 0 240 -2 minecraft:stone"
+          issue_command "/setblock 0 240 0 minecraft:stone"
+          issue_command "/give @s minecraft:stone 64"
+          issue_command "/tp @s 0.5 241 -1.5 0 48"
+          sleep 4
+          capture scene
+          xdotool key --clearmodifiers F8
+          sleep 6
           capture trainer-f8
-          xdotool key F9
+          xdotool click 3
+          sleep 5
+          capture trainer-after-click
+          xdotool key --clearmodifiers F9
           sleep 4
           capture trainer-f9
           echo "Mods / main mod / errors in log:"
