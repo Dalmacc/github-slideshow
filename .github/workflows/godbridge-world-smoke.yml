@@ -94,10 +94,13 @@ jobs:
           }
           # An isolated reproducible godbridge target. Player stands on -2,
           # an anchor is at 0, and -1 is deliberately left empty.
-          issue_command "/setblock 0 240 -2 minecraft:stone"
-          issue_command "/setblock 0 240 0 minecraft:stone"
+          issue_command "/forceload add 0 -2 0 0"
+          sleep 5
+          issue_command "/fill 0 300 -3 2 305 2 minecraft:air replace"
+          issue_command "/setblock 0 300 -2 minecraft:stone"
+          issue_command "/setblock 0 300 0 minecraft:stone"
           issue_command "/give @s minecraft:stone 64"
-          issue_command "/tp @s 0.5 241 -1.5 0 48"
+          issue_command "/tp @s 0.5 301 -1.5 0 48"
           sleep 4
           capture scene
           xdotool key --clearmodifiers F8
@@ -113,6 +116,10 @@ jobs:
           grep -Ei 'godbridge|loading minecraft|loading [0-9]+ mods|exception|error|resource reload|loaded [0-9]+ recipes|loading world|spawn|client bound' world-smoke.log | tail -n 65 || true
           echo "X11 windows:"
           xwininfo -root -tree || true
+          if grep -q 'That position is not loaded' world-smoke.log; then
+            echo 'SCENE_SETUP_CHUNK_UNLOADED' | tee -a steps.log
+            exit 1
+          fi
           kill "$build_pid" 2>/dev/null || true
           SCRIPT
           chmod +x world-smoke.sh
