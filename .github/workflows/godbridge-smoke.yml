@@ -8,7 +8,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -49,31 +49,39 @@ jobs:
           vulkaninfo --summary >> graphics-info.log 2>&1 || true
           echo "---graphics-preflight---"
           tail -n 60 graphics-info.log
-          timeout --signal=TERM --kill-after=8s 115s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
+          timeout --signal=TERM --kill-after=8s 230s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
           runner_pid=$!
-          sleep 45
-          echo "---X11 windows---" | tee windows.log
-          xwininfo -root -tree >> windows.log 2>&1 || true
-          wmctrl -l -p >> windows.log 2>&1 || true
-          win_id="$(xdotool search --all --name 'Minecraft' 2>/dev/null | tail -1 || true)"
-          echo "MINECRAFT_WINDOW_ID=$win_id" | tee -a windows.log
-          if [[ -n "$win_id" ]]; then
-            import -window "$win_id" client-screen.png 2>> graphics-info.log || true
-          fi
-          sleep 25
-          if [[ -n "$win_id" ]]; then
-            import -window "$win_id" client-screen-late.png 2>> graphics-info.log || true
-          fi
-          echo "--- JVM processes after resources load ---" > process-info.log
+          capture_game_window() {
+            local label="$1"
+            local xvfb_cmd game_display game_auth win_id
+            xvfb_cmd="$(ps -eo args | grep -E '^Xvfb :[0-9]+' | tail -n 1 || true)"
+            game_display="$(echo "$xvfb_cmd" | awk '{print $2}')"
+            game_auth="$(echo "$xvfb_cmd" | sed -nE 's/.* -auth ([^ ]+).*/\1/p')"
+            {
+              echo "---window capture $label---"
+              echo "Xvfb selected: $xvfb_cmd"
+              echo "DISPLAY=$game_display XAUTHORITY=$game_auth"
+            } >> windows.log
+            if [[ -z "$game_display" || -z "$game_auth" ]]; then return; fi
+            DISPLAY="$game_display" XAUTHORITY="$game_auth" xwininfo -root -tree >> windows.log 2>&1 || true
+            win_id="$(DISPLAY="$game_display" XAUTHORITY="$game_auth" xdotool search --all --name 'Minecraft' 2>/dev/null | tail -1 || true)"
+            echo "MINECRAFT_WINDOW_ID_${label}=$win_id" >> windows.log
+            if [[ -n "$win_id" ]]; then
+              DISPLAY="$game_display" XAUTHORITY="$game_auth" import -window "$win_id" "client-screen-${label}.png" 2>>graphics-info.log || true
+            fi
+          }
+          sleep 105
+          capture_game_window first
+          echo "--- JVM processes after 105s ---" > process-info.log
           jcmd -l >> process-info.log 2>&1 || true
           ps -eo pid,ppid,pcpu,pmem,etime,comm,args --sort=-pcpu | head -n 35 >> process-info.log || true
-          echo "--- X11 window state after resources load ---" >> windows.log
-          xwininfo -root -tree >> windows.log 2>&1 || true
           java_pid="$(jcmd -l 2>/dev/null | awk '/net.fabricmc.devlaunchinjector.Main/ {print $1; exit}')"
           echo "MINECRAFT_JAVA_PID=$java_pid" >> process-info.log
           if [[ -n "$java_pid" ]]; then
             jcmd "$java_pid" Thread.print -l > thread-dump.txt 2>&1 || true
           fi
+          sleep 65
+          capture_game_window late
           wait "$runner_pid"
           code=$?
           echo "CLIENT_EXIT_CODE=$code" | tee -a client-smoke.log
@@ -87,6 +95,10 @@ jobs:
             echo "BOOTSTRAP_INCOMPLETE=1" | tee -a windows.log
             exit 1
           fi
+          if ! grep -q 'MINECRAFT_WINDOW_ID_late=[0-9]' windows.log; then
+            echo "NO_CAPTURED_MINECRAFT_WINDOW=1" | tee -a windows.log
+            exit 1
+          fi
           SCRIPT
           chmod +x run-smoke.sh
           xvfb-run -a -s "-screen 0 1280x720x24 +extension GLX +render -noreset" ./run-smoke.sh
@@ -98,7 +110,7 @@ jobs:
           path: |
             godbridge/graphics-info.log
             godbridge/client-smoke.log
-            godbridge/client-screen.png
+            godbridge/client-screen-first.png
             godbridge/client-screen-late.png
             godbridge/windows.log
             godbridge/process-info.log
