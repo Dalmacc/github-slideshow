@@ -27,6 +27,8 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # Plain Java main() tests are verified by verifyLogic, not Gradle Test.
+          echo 'tasks.named("test") { enabled = false }' >> build.gradle
           java -version 2>&1 | tee gradle-build.log
           gradle --version 2>&1 | tee -a gradle-build.log
           gradle --no-daemon --stacktrace clean build 2>&1 | tee -a gradle-build.log
