@@ -21,7 +21,7 @@ jobs:
       - name: Install Mesa software graphics diagnostics
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb mesa-utils libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers libvulkan1 vulkan-tools x11-utils imagemagick
+          sudo apt-get install -y -qq xvfb mesa-utils libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers libvulkan1 vulkan-tools x11-utils imagemagick xdotool wmctrl
       - name: Extract isolated project
         run: |
           mkdir -p godbridge
@@ -37,6 +37,7 @@ jobs:
           SDL_VIDEODRIVER: x11
           SDL_VIDEO_X11_FORCE_EGL: '1'
           MESA_GL_VERSION_OVERRIDE: '4.5'
+          ALSOFT_DRIVERS: 'null'
         run: |
           set -uo pipefail
           cat > run-smoke.sh <<'SCRIPT'
@@ -50,13 +51,32 @@ jobs:
           tail -n 60 graphics-info.log
           timeout --signal=TERM --kill-after=8s 115s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
           runner_pid=$!
-          sleep 65
-          import -window root client-screen.png 2>> graphics-info.log || true
+          sleep 45
+          echo "---X11 windows---" | tee windows.log
+          xwininfo -root -tree >> windows.log 2>&1 || true
+          wmctrl -l -p >> windows.log 2>&1 || true
+          win_id="$(xdotool search --all --name 'Minecraft' 2>/dev/null | tail -1 || true)"
+          echo "MINECRAFT_WINDOW_ID=$win_id" | tee -a windows.log
+          if [[ -n "$win_id" ]]; then
+            import -window "$win_id" client-screen.png 2>> graphics-info.log || true
+          fi
+          sleep 25
+          if [[ -n "$win_id" ]]; then
+            import -window "$win_id" client-screen-late.png 2>> graphics-info.log || true
+          fi
           wait "$runner_pid"
           code=$?
           echo "CLIENT_EXIT_CODE=$code" | tee -a client-smoke.log
           echo "--- Minecraft markers ---"
           grep -Ei 'godbridge|Minecraft 26.3|mods:|backend|Exception|ERROR|OpenGL|Vulkan|GLX|render' client-smoke.log | tail -n 120 || true
+          if grep -qE '(MixinApplyError|InvalidMixinException|NoSuchMethodError|ExceptionInInitializerError)' client-smoke.log; then
+            echo "FATAL_MOD_OR_API_ERROR=1" | tee -a windows.log
+            exit 1
+          fi
+          if ! grep -q 'Reloading ResourceManager' client-smoke.log; then
+            echo "BOOTSTRAP_INCOMPLETE=1" | tee -a windows.log
+            exit 1
+          fi
           SCRIPT
           chmod +x run-smoke.sh
           xvfb-run -a -s "-screen 0 1280x720x24 +extension GLX +render -noreset" ./run-smoke.sh
@@ -69,6 +89,8 @@ jobs:
             godbridge/graphics-info.log
             godbridge/client-smoke.log
             godbridge/client-screen.png
+            godbridge/client-screen-late.png
+            godbridge/windows.log
             godbridge/run/logs/latest.log
             godbridge/run/crash-reports/*.txt
           if-no-files-found: warn
