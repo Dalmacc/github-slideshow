@@ -1,0 +1,15 @@
+name: GodBridge CI runner probe
+on:
+  push:
+    branches: [godbridge-ci-20261014]
+permissions:
+  contents: read
+jobs:
+  runner-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Runner and Java availability
+        run: |
+          echo 'GodBridge isolated runner check'
+          uname -a
+          java -version 2>&1 || true
