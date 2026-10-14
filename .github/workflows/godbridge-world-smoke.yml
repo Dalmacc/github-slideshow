@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir -p godbridge
           tar -xJf godbridge-source.tar.xz -C godbridge
+          python3 ci/upgrade_016.py godbridge
       - name: Run Minecraft, create Creative world, enable HUD
         working-directory: godbridge
         env:

@@ -15,6 +15,7 @@ jobs:
         run: |
           mkdir -p godbridge
           tar -xJf godbridge-source.tar.xz -C godbridge
+          python3 ci/upgrade_016.py godbridge
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
