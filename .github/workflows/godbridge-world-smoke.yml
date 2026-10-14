@@ -1,0 +1,111 @@
+name: GodBridge in-world trainer smoke
+on:
+  push:
+    branches: [godbridge-ci-20261014]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  world-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
+      - name: Install software Vulkan and window controls
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb mesa-utils libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers libvulkan1 x11-utils imagemagick xdotool
+      - name: Extract training mod
+        run: |
+          mkdir -p godbridge
+          tar -xJf godbridge-source.tar.xz -C godbridge
+      - name: Run Minecraft, create Creative world, enable HUD
+        working-directory: godbridge
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          GALLIUM_DRIVER: llvmpipe
+          SDL_VIDEODRIVER: x11
+          SDL_VIDEO_X11_FORCE_EGL: '1'
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          set -e
+          cat > world-smoke.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          timeout --signal=TERM --kill-after=8s 370s gradle --no-daemon --console=plain runClient > world-smoke.log 2>&1 &
+          build_pid=$!
+          echo "RUNCLIENT_PID=$build_pid" | tee steps.log
+          sleep 100
+          nested="$(ps -eo args | grep -E '^Xvfb :[0-9]+' | tail -n 1 || true)"
+          game_display="$(echo "$nested" | awk '{print $2}')"
+          game_auth="$(echo "$nested" | sed -nE 's/.* -auth ([^ ]+).*/\1/p')"
+          export DISPLAY="$game_display"
+          export XAUTHORITY="$game_auth"
+          echo "DISPLAY=$DISPLAY; XAUTHORITY=$XAUTHORITY; nested=$nested" | tee -a steps.log
+          capture() {
+            local stage="$1"
+            local wid
+            wid="$(xwininfo -root -tree 2>/dev/null | awk '/"Minecraft/ {print $1; exit}')"
+            echo "$stage window=$wid $(date -u '+%H:%M:%S')" | tee -a steps.log
+            [[ -n "$wid" ]] && import -window "$wid" "screen-$stage.png" 2>>steps.log || true
+          }
+          clickwin() {
+            local x="$1" y="$2"
+            local wid
+            wid="$(xwininfo -root -tree 2>/dev/null | awk '/"Minecraft/ {print $1; exit}')"
+            if [[ -n "$wid" ]]; then
+              xdotool windowfocus "$wid" || true
+              xdotool mousemove --window "$wid" "$x" "$y" click 1 || true
+            fi
+          }
+          capture welcome
+          clickwin 427 448
+          sleep 6
+          capture menu
+          clickwin 427 235
+          sleep 7
+          capture create
+          # Allow commands, set Creative via game-mode cycle.
+          clickwin 427 283
+          sleep 1
+          clickwin 427 171
+          sleep 2
+          capture creation-options
+          clickwin 266 446
+          echo "World creation requested" | tee -a steps.log
+          sleep 125
+          capture world
+          xdotool key F8
+          sleep 8
+          capture trainer-f8
+          xdotool key F9
+          sleep 4
+          capture trainer-f9
+          echo "Mods / main mod / errors in log:"
+          grep -Ei 'godbridge|loading minecraft|loading [0-9]+ mods|exception|error|resource reload|loaded [0-9]+ recipes|loading world|spawn|client bound' world-smoke.log | tail -n 65 || true
+          echo "X11 windows:"
+          xwininfo -root -tree || true
+          kill "$build_pid" 2>/dev/null || true
+          SCRIPT
+          chmod +x world-smoke.sh
+          xvfb-run -a -s "-screen 0 1280x1024x24 +extension GLX +render -noreset" ./world-smoke.sh
+      - name: Store images and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godbridge-world-smoke
+          path: |
+            godbridge/screen-*.png
+            godbridge/steps.log
+            godbridge/world-smoke.log
+            godbridge/run/logs/latest.log
+            godbridge/run/crash-reports/*.txt
+          if-no-files-found: error
