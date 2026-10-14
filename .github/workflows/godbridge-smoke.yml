@@ -1,0 +1,50 @@
+name: GodBridge Client Smoke
+on:
+  push:
+    branches: [godbridge-ci-20261014]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
+      - name: Confirm display tools and extract isolated project
+        run: |
+          set -e
+          command -v Xvfb || true
+          command -v xvfb-run || true
+          mkdir -p godbridge
+          tar -xJf godbridge-source.tar.xz -C godbridge
+          java -version
+      - name: Launch Minecraft client under virtual X server
+        working-directory: godbridge
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          SDL_VIDEODRIVER: x11
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=8s 150s xvfb-run -a -s "-screen 0 1280x720x24" gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1
+          code=$?
+          echo "CLIENT_EXIT_CODE=${code}" | tee -a client-smoke.log
+          grep -Ei 'godbridge|minecraft|mod|mixin|error|exception|renderer|glfw|opengl|sound' client-smoke.log | tail -n 100 || true
+          exit 0
+      - name: Upload client smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godbridge-client-smoke
+          path: |
+            godbridge/client-smoke.log
+            godbridge/run/logs/latest.log
+            godbridge/run/crash-reports/*.txt
+          if-no-files-found: warn
