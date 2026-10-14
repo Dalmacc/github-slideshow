@@ -1,4 +1,4 @@
-name: GodBridge Client Smoke
+name: GodBridge Minecraft client graphics smoke
 on:
   push:
     branches: [godbridge-ci-20261014]
@@ -8,7 +8,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -18,33 +18,57 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.7.1'
-      - name: Confirm display tools and extract isolated project
+      - name: Install Mesa software graphics diagnostics
         run: |
-          set -e
-          command -v Xvfb || true
-          command -v xvfb-run || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb mesa-utils libgl1-mesa-dri libglx-mesa0 mesa-vulkan-drivers libvulkan1 vulkan-tools x11-utils imagemagick
+      - name: Extract isolated project
+        run: |
           mkdir -p godbridge
           tar -xJf godbridge-source.tar.xz -C godbridge
           java -version
-      - name: Launch Minecraft client under virtual X server
+      - name: Probe GPU + attempt Minecraft via software EGL
         working-directory: godbridge
+        shell: bash
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          GALLIUM_DRIVER: llvmpipe
           SDL_VIDEODRIVER: x11
+          SDL_VIDEO_X11_FORCE_EGL: '1'
+          MESA_GL_VERSION_OVERRIDE: '4.5'
         run: |
-          set +e
-          timeout --signal=TERM --kill-after=8s 150s xvfb-run -a -s "-screen 0 1280x720x24" gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1
+          set -uo pipefail
+          cat > run-smoke.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -uo pipefail
+          echo "DISPLAY=$DISPLAY" | tee graphics-info.log
+          xdpyinfo -ext GLX >> graphics-info.log 2>&1 || true
+          glxinfo -B >> graphics-info.log 2>&1 || true
+          vulkaninfo --summary >> graphics-info.log 2>&1 || true
+          echo "---graphics-preflight---"
+          tail -n 60 graphics-info.log
+          timeout --signal=TERM --kill-after=8s 115s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
+          runner_pid=$!
+          sleep 65
+          import -window root client-screen.png 2>> graphics-info.log || true
+          wait "$runner_pid"
           code=$?
-          echo "CLIENT_EXIT_CODE=${code}" | tee -a client-smoke.log
-          grep -Ei 'godbridge|minecraft|mod|mixin|error|exception|renderer|glfw|opengl|sound' client-smoke.log | tail -n 100 || true
-          exit 0
-      - name: Upload client smoke log
+          echo "CLIENT_EXIT_CODE=$code" | tee -a client-smoke.log
+          echo "--- Minecraft markers ---"
+          grep -Ei 'godbridge|Minecraft 26.3|mods:|backend|Exception|ERROR|OpenGL|Vulkan|GLX|render' client-smoke.log | tail -n 120 || true
+          SCRIPT
+          chmod +x run-smoke.sh
+          xvfb-run -a -s "-screen 0 1280x720x24 +extension GLX +render -noreset" ./run-smoke.sh
+      - name: Upload logs and screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: godbridge-client-smoke
+          name: godbridge-client-graphics-smoke
           path: |
+            godbridge/graphics-info.log
             godbridge/client-smoke.log
+            godbridge/client-screen.png
             godbridge/run/logs/latest.log
             godbridge/run/crash-reports/*.txt
           if-no-files-found: warn
