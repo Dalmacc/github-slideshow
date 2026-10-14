@@ -49,7 +49,7 @@ jobs:
           vulkaninfo --summary >> graphics-info.log 2>&1 || true
           echo "---graphics-preflight---"
           tail -n 60 graphics-info.log
-          timeout --signal=TERM --kill-after=8s 230s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
+          timeout --signal=TERM --kill-after=8s 175s gradle --no-daemon --console=plain runClient > client-smoke.log 2>&1 &
           runner_pid=$!
           capture_game_window() {
             local label="$1"
@@ -64,13 +64,13 @@ jobs:
             } >> windows.log
             if [[ -z "$game_display" || -z "$game_auth" ]]; then return; fi
             DISPLAY="$game_display" XAUTHORITY="$game_auth" xwininfo -root -tree >> windows.log 2>&1 || true
-            win_id="$(DISPLAY="$game_display" XAUTHORITY="$game_auth" xdotool search --all --name 'Minecraft' 2>/dev/null | tail -1 || true)"
+            win_id="$(DISPLAY="$game_display" XAUTHORITY="$game_auth" xwininfo -root -tree 2>/dev/null | awk '/"Minecraft/ {print $1; exit}' || true)"
             echo "MINECRAFT_WINDOW_ID_${label}=$win_id" >> windows.log
             if [[ -n "$win_id" ]]; then
               DISPLAY="$game_display" XAUTHORITY="$game_auth" import -window "$win_id" "client-screen-${label}.png" 2>>graphics-info.log || true
             fi
           }
-          sleep 105
+          sleep 100
           capture_game_window first
           echo "--- JVM processes after 105s ---" > process-info.log
           jcmd -l >> process-info.log 2>&1 || true
@@ -80,7 +80,7 @@ jobs:
           if [[ -n "$java_pid" ]]; then
             jcmd "$java_pid" Thread.print -l > thread-dump.txt 2>&1 || true
           fi
-          sleep 65
+          sleep 35
           capture_game_window late
           wait "$runner_pid"
           code=$?
