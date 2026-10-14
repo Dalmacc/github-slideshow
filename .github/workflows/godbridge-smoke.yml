@@ -64,6 +64,16 @@ jobs:
           if [[ -n "$win_id" ]]; then
             import -window "$win_id" client-screen-late.png 2>> graphics-info.log || true
           fi
+          echo "--- JVM processes after resources load ---" > process-info.log
+          jcmd -l >> process-info.log 2>&1 || true
+          ps -eo pid,ppid,pcpu,pmem,etime,comm,args --sort=-pcpu | head -n 35 >> process-info.log || true
+          echo "--- X11 window state after resources load ---" >> windows.log
+          xwininfo -root -tree >> windows.log 2>&1 || true
+          java_pid="$(jcmd -l 2>/dev/null | awk '/net.fabricmc.devlaunchinjector.Main/ {print $1; exit}')"
+          echo "MINECRAFT_JAVA_PID=$java_pid" >> process-info.log
+          if [[ -n "$java_pid" ]]; then
+            jcmd "$java_pid" Thread.print -l > thread-dump.txt 2>&1 || true
+          fi
           wait "$runner_pid"
           code=$?
           echo "CLIENT_EXIT_CODE=$code" | tee -a client-smoke.log
@@ -91,6 +101,8 @@ jobs:
             godbridge/client-screen.png
             godbridge/client-screen-late.png
             godbridge/windows.log
+            godbridge/process-info.log
+            godbridge/thread-dump.txt
             godbridge/run/logs/latest.log
             godbridge/run/crash-reports/*.txt
           if-no-files-found: warn
