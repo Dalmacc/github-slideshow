@@ -32,17 +32,17 @@ replace("build.gradle",
     "'GuideGeometrySelfTest',",
     "'GuideGeometrySelfTest', 'TargetRayGeometrySelfTest',")
 replace("gradle.properties","mod_version=0.15.0","mod_version=0.16.0")
-import re
 hud=root/"src/main/java/dev/dalmacc/godbridge/TrainerHud.java"
 h=hud.read_text()
-h=re.sub(r"v0\\.(?:14|15)", "v0.16", h)
-h=re.sub(r"GB 0\\.(?:14|15)", "GB 0.16", h)
+for v in ("0.14","0.15"):
+    h=h.replace("v"+v,"v0.16").replace("GB "+v,"GB 0.16")
 hud.write_text(h)
 for rel in ("build.sh","build.ps1",".github/workflows/build.yml"):
     p=root/rel
     text=p.read_text()
-    text=re.sub(r"godbridge-trainer-26\\.3-0\\.(?:14|15)\\.0\\.jar",
-                "godbridge-trainer-26.3-0.16.0.jar",text)
+    for v in ("0.14.0","0.15.0"):
+        text=text.replace("godbridge-trainer-26.3-"+v+".jar",
+                          "godbridge-trainer-26.3-0.16.0.jar")
     if rel.endswith("build.yml"):
         text=text.replace('"version": "0.15.0"', '"version": "0.16.0"')
     p.write_text(text)
