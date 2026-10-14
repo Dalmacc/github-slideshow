@@ -32,11 +32,20 @@ replace("build.gradle",
     "'GuideGeometrySelfTest',",
     "'GuideGeometrySelfTest', 'TargetRayGeometrySelfTest',")
 replace("gradle.properties","mod_version=0.15.0","mod_version=0.16.0")
-replace("src/main/java/dev/dalmacc/godbridge/TrainerHud.java","v0.15","v0.16")
-replace("src/main/java/dev/dalmacc/godbridge/TrainerHud.java","GB 0.15","GB 0.16")
-for p in ("build.sh","build.ps1",".github/workflows/build.yml"):
-    replace(p,"godbridge-trainer-26.3-0.15.0.jar","godbridge-trainer-26.3-0.16.0.jar")
-replace(".github/workflows/build.yml",'"version": "0.15.0"','"version": "0.16.0"')
+import re
+hud=root/"src/main/java/dev/dalmacc/godbridge/TrainerHud.java"
+h=hud.read_text()
+h=re.sub(r"v0\\.(?:14|15)", "v0.16", h)
+h=re.sub(r"GB 0\\.(?:14|15)", "GB 0.16", h)
+hud.write_text(h)
+for rel in ("build.sh","build.ps1",".github/workflows/build.yml"):
+    p=root/rel
+    text=p.read_text()
+    text=re.sub(r"godbridge-trainer-26\\.3-0\\.(?:14|15)\\.0\\.jar",
+                "godbridge-trainer-26.3-0.16.0.jar",text)
+    if rel.endswith("build.yml"):
+        text=text.replace('"version": "0.15.0"', '"version": "0.16.0"')
+    p.write_text(text)
 
 test=root/"src/test/java/dev/dalmacc/godbridge/TargetRayGeometrySelfTest.java"
 test.write_text("""package dev.dalmacc.godbridge;
