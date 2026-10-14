@@ -1,15 +1,46 @@
-name: GodBridge CI runner probe
+name: GodBridge Trainer Fabric 26.3 build
 on:
   push:
     branches: [godbridge-ci-20261014]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  runner-probe:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Runner and Java availability
+      - uses: actions/checkout@v4
+      - name: Extract isolated source
         run: |
-          echo 'GodBridge isolated runner check'
-          uname -a
-          java -version 2>&1 || true
+          mkdir -p godbridge
+          tar -xJf godbridge-v014.tar.xz -C godbridge
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
+      - name: Build against actual 26.3 API
+        working-directory: godbridge
+        shell: bash
+        run: |
+          set -o pipefail
+          java -version 2>&1 | tee gradle-build.log
+          gradle --version 2>&1 | tee -a gradle-build.log
+          gradle --no-daemon --stacktrace clean build 2>&1 | tee -a gradle-build.log
+      - name: Upload complete build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godbridge-build-log
+          path: godbridge/gradle-build.log
+          if-no-files-found: warn
+      - name: Upload jars on success
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godbridge-installable-jars
+          path: godbridge/build/libs/*.jar
+          if-no-files-found: error
