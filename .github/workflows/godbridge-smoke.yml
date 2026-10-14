@@ -72,6 +72,19 @@ jobs:
           }
           sleep 100
           capture_game_window first
+          # Fresh CI profiles open the accessibility welcome page. Click its
+          # centered Continue button using exact window-local coordinates.
+          inner_xvfb="$(ps -eo args | grep -E '^Xvfb :[0-9]+' | tail -n 1 || true)"
+          inner_display="$(echo "$inner_xvfb" | awk '{print $2}')"
+          inner_auth="$(echo "$inner_xvfb" | sed -nE 's/.* -auth ([^ ]+).*/\1/p')"
+          inner_window="$(DISPLAY="$inner_display" XAUTHORITY="$inner_auth" xwininfo -root -tree 2>/dev/null | awk '/"Minecraft/ {print $1; exit}' || true)"
+          if [[ -n "$inner_window" ]]; then
+            echo "CLICK_ACCESSIBILITY_CONTINUE_WINDOW=$inner_window" >> windows.log
+            DISPLAY="$inner_display" XAUTHORITY="$inner_auth" xdotool windowfocus "$inner_window" || true
+            DISPLAY="$inner_display" XAUTHORITY="$inner_auth" xdotool mousemove --window "$inner_window" 427 448 click 1 || true
+            sleep 12
+            capture_game_window menu
+          fi
           echo "--- JVM processes after 105s ---" > process-info.log
           jcmd -l >> process-info.log 2>&1 || true
           ps -eo pid,ppid,pcpu,pmem,etime,comm,args --sort=-pcpu | head -n 35 >> process-info.log || true
@@ -112,6 +125,7 @@ jobs:
             godbridge/client-smoke.log
             godbridge/client-screen-first.png
             godbridge/client-screen-late.png
+            godbridge/client-screen-menu.png
             godbridge/windows.log
             godbridge/process-info.log
             godbridge/thread-dump.txt
